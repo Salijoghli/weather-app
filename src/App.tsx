@@ -1,102 +1,69 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import "./index.css";
-import { useFetch } from "./hooks/useFetch";
-import { CiSearch } from "react-icons/ci";
+import { useQuery } from "react-query";
+import { useDebounce } from "use-debounce";
+import { Loading } from "./components/Loading";
+import { ErrorComponent } from "./components/Error";
+import { Weather, type TWeather } from "./components/Weather";
 
 const API = "https://api.openweathermap.org/data/2.5/";
 
-type Weather = {
-  weather: [
-    {
-      id: number;
-      main: string;
-      description: string;
-      icon: string;
-    }
-  ];
-  main: {
-    temp: number;
-    feels_like: number;
-    temp_min: number;
-    temp_max: number;
-    pressure: number;
-    humidity: number;
-  };
-  visibility: number;
-  wind: {
-    speed: number;
-    deg: number;
-  };
-  clouds: { all: number };
-  sys: {
-    sunrise: number;
-    sunset: number;
-    country: string;
-  };
-  name: string;
-};
-
-const defaultData: Weather = {
-  weather: [
-    {
-      id: 0,
-      main: "",
-      icon: "",
-      description: "",
-    },
-  ],
-  main: {
-    temp: 0,
-    feels_like: 0,
-    temp_min: 0,
-    temp_max: 0,
-    pressure: 0,
-    humidity: 0,
-  },
-  wind: {
-    speed: 0,
-    deg: 0,
-  },
-  clouds: { all: 0 },
-  name: "",
-  sys: {
-    sunrise: 0,
-    sunset: 0,
-    country: "",
-  },
-  visibility: 0,
+const getWeatherData = async (city: string): Promise<TWeather> => {
+  const response = await fetch(
+    `${API}weather?q=${city}&appid=${
+      import.meta.env.VITE_WEATHER_API_KEY
+    }&units=metric`
+  );
+  if (!response.ok) {
+    const errorDetails = await response.json();
+    throw new Error(errorDetails.message || "Network response was not ok");
+  }
+  const data = await response.json();
+  return data;
 };
 
 function App() {
-  const [input, setInput] = useState("batumi");
-  const [city, setCity] = useState("");
-  const { data, error, loading } = useFetch<Weather>(
-    `${API}weather?q=${city}&appid=${import.meta.env.VITE_WEATHER_API_KEY}`,
-    defaultData
+  const [input, setInput] = useState("");
+  const [city] = useDebounce(input, 1000);
+  const { data, isLoading, error } = useQuery<TWeather, Error>(
+    ["weather", city],
+    () => getWeatherData(city),
+    {
+      enabled: !!city,
+      retry: 1,
+      staleTime: 1000 * 60 * 5,
+    }
   );
-  const image = `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`;
 
-  if (loading) return <div>Loading...</div>;
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const filteredValue = value.replace(
+      /[^a-zA-Z\u10A0-\u10FF\u0400-\u04FF]/g,
+      ""
+    );
+    setInput(filteredValue);
+  };
+
   return (
-    <div className="relative max-w-full h-screen content-center">
-      <div className="absolute top-0 left-0 w-full h-full bg-[url(./assets/images/rain.jpg)] bg-cover bg-no-repeat bg-center bg-black z-0"></div>
-      <main className="relative w-1/2 border place-self-center">
-        <div className="flex place-self-center relative w-1/2">
-          <input
-            onChange={(e) => setInput(e.target.value)}
-            className=" w-full px-4 py-3 rounded-3xl bg-[rgb(0,0,0,0.65)] :placeholder-gray-400 text-white"
-            placeholder="Search City"
-            value={input}
-          />
-          <button
-            className=" absolute right-1 top-1/2 transform -translate-y-1/2 border-none cursor-pointer flex justify-center items-center"
-            onClick={() => setCity(input)}
-          >
-            <CiSearch color="white" size={30} />
-          </button>
-        </div>
-      </main>
+    <div className="m-auto w-full md:max-w-7xl">
+      <div className="py-10">
+        <input
+          onChange={(e) => handleInputChange(e)}
+          className="px-10 py-4 rounded-3xl bg-[rgb(20,10,25,0.65)] :placeholder-gray-400 text-white"
+          placeholder="Search City"
+          value={input}
+        />
+      </div>
+      {isLoading ? (
+        <Loading />
+      ) : error ? (
+        <ErrorComponent error={error} />
+      ) : data ? (
+        <Weather data={data} />
+      ) : (
+        <div>No data</div>
+      )}
     </div>
   );
 }
